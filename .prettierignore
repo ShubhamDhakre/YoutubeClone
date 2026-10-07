@@ -1,0 +1,11 @@
+*.env
+.env
+.env.*
+node_modules
+*.log
+dist/*
+package-lock.json
+.vscode
+*.md
+*.yml
+*.lock
