@@ -1,0 +1,1 @@
+export const DB_NAME = "YT_Clone_DB"
