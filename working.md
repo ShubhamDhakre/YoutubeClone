@@ -24,7 +24,7 @@ For every single route, you will find:
   - [9. Update Cover Image (`PATCH /update-cover-image`)](#9-update-cover-image-patch-apiv1usersupdate-cover-image)
   - [10. Get User Channel Profile (`GET /c/:username`)](#10-get-user-channel-profile-get-apiv1userscusername)
   - [11. Get Watch History (`GET /history`)](#11-get-watch-history-get-apiv1usershistory)
-- [PART 2: Pending Routes (To Be Built Next)](#part-2-pending-routes-to-be-built-next)
+- [PART 2: Implemented Feature Modules (31 Routes)](#part-2-implemented-feature-modules-31-routes)
   - [A. Video Routes (`/api/v1/videos`)](#a-video-routes-apiv1videos--6-routes)
   - [B. Subscription Routes (`/api/v1/subscriptions`)](#b-subscription-routes-apiv1subscriptions--3-routes)
   - [C. Like Routes (`/api/v1/likes`)](#c-like-routes-apiv1likes--4-routes)
@@ -42,15 +42,15 @@ For every single route, you will find:
 | Feature Module | Base URL | Route Count | Status | Description |
 | :--- | :--- | :---: | :---: | :--- |
 | **User & Channel** | `/api/v1/users` | **11** | ✅ **DONE** | Complete auth, profile updates, media uploads, channel metrics & watch history. |
-| **Videos** | `/api/v1/videos` | **6** | ⏳ **PENDING** | Video upload, pagination, search, editing, views increment & delete. |
-| **Subscriptions** | `/api/v1/subscriptions` | **3** | ⏳ **PENDING** | Subscribe/unsubscribe toggle, channel subscribers list & following list. |
-| **Likes** | `/api/v1/likes` | **4** | ⏳ **PENDING** | Like/unlike videos, comments, tweets & liked videos feed. |
-| **Comments** | `/api/v1/comments` | **4** | ⏳ **PENDING** | Adding, reading, editing, and deleting comments on videos. |
-| **Playlists** | `/api/v1/playlists` | **7** | ⏳ **PENDING** | Creating playlists, adding/removing videos, viewing user playlists. |
-| **Community Tweets** | `/api/v1/tweets` | **4** | ⏳ **PENDING** | Text-based channel posts, editing & fetching creator posts. |
-| **Creator Dashboard** | `/api/v1/dashboard` | **2** | ⏳ **PENDING** | Channel overview metrics (total views, likes, subs) & video studio table. |
-| **Health Check** | `/api/v1/healthcheck` | **1** | ⏳ **PENDING** | Server and database liveness ping. |
-| **TOTAL** | | **42** | **11 Done / 31 Pending** | |
+| **Videos** | `/api/v1/videos` | **6** | ✅ **DONE** | Video upload, pagination, search, editing, views increment & delete. |
+| **Subscriptions** | `/api/v1/subscriptions` | **3** | ✅ **DONE** | Subscribe/unsubscribe toggle, channel subscribers list & following list. |
+| **Likes** | `/api/v1/likes` | **4** | ✅ **DONE** | Like/unlike videos, comments, tweets & liked videos feed. |
+| **Comments** | `/api/v1/comments` | **4** | ✅ **DONE** | Adding, reading, editing, and deleting comments on videos. |
+| **Playlists** | `/api/v1/playlists` | **7** | ✅ **DONE** | Creating playlists, adding/removing videos, viewing user playlists. |
+| **Community Tweets** | `/api/v1/tweets` | **4** | ✅ **DONE** | Text-based channel posts, editing & fetching creator posts. |
+| **Creator Dashboard** | `/api/v1/dashboard` | **2** | ✅ **DONE** | Channel overview metrics (total views, likes, subs) & video studio table. |
+| **Health Check** | `/api/v1/healthcheck` | **1** | ✅ **DONE** | Server and database liveness ping. |
+| **TOTAL** | | **42** | **42 Done / 0 Pending** | Complete Backend Implementation |
 
 ---
 
@@ -492,19 +492,19 @@ Uses a **Nested MongoDB Aggregation Pipeline**:
 
 ---
 
-# PART 2: Pending Routes (To Be Built Next)
+# PART 2: Implemented Feature Modules (31 Routes)
 
-These 31 routes are planned for the upcoming branches to turn your project into a full-featured video platform.
+All 31 remaining feature routes are implemented, wired into Express (`src/app.js`), and tested with complete validation and aggregation pipelines.
 
 ---
 
 ## A. Video Routes (`/api/v1/videos`) — 6 Routes
-*Uses existing [`video.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/video.model.js)*
+*Uses [`video.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/video.model.js), [`video.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/video.controller.js), and [`video.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/video.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. POST /api/v1/videos/                                                     │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT, upload.fields([{ videoFile }, { thumbnail }])  │
 │    • Receives: multipart/form-data: title, description, videoFile, thumbnail│
 │    • Returns: 201 Created with saved Video document (Cloudinary URLs)       │
@@ -512,7 +512,7 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 │      automatically calculates video duration. Video record created in DB.   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. GET /api/v1/videos/                                                      │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: None (Public feed)                                        │
 │    • Receives: Query params: ?page=1&limit=10&query=react&sortBy=views     │
 │    • Returns: 200 OK with paginated list of video cards and owner details   │
@@ -520,15 +520,15 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 │      only retrieves isPublished: true, sorts by date or view count.         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 3. GET /api/v1/videos/:videoId                                              │
-│    • Status: ⏳ PENDING                                                     │
-│    • Middlewares: Optional verifyJWT                                        │
+│    • Status: ✅ DONE & WORKING                                              │
+│    • Middlewares: verifyJWTOptional (Public or Authenticated)               │
 │    • Receives: URL param :videoId                                           │
 │    • Returns: 200 OK with full video details and channel owner data         │
 │    • Logic: Finds video by ID, executes $inc: { views: 1 }, appends videoId │
 │      to the logged-in user's watchHistory array.                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 4. PATCH /api/v1/videos/:videoId                                            │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT, upload.single("thumbnail")                     │
 │    • Receives: :videoId, body: { title, description }, optional thumbnail   │
 │    • Returns: 200 OK with updated video details                             │
@@ -536,7 +536,7 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 │      uploads to Cloudinary and replaces old thumbnail. Updates DB.          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 5. DELETE /api/v1/videos/:videoId                                           │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT                                                 │
 │    • Receives: URL param :videoId                                           │
 │    • Returns: 200 OK with confirmation message                              │
@@ -544,7 +544,7 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 │      Cloudinary. Removes video document from MongoDB.                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 6. PATCH /api/v1/videos/toggle/publish/:videoId                             │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT                                                 │
 │    • Receives: URL param :videoId                                           │
 │    • Returns: 200 OK with { isPublished: true/false }                       │
@@ -555,12 +555,12 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 ---
 
 ## B. Subscription Routes (`/api/v1/subscriptions`) — 3 Routes
-*Uses existing [`subscription.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/subscription.model.js)*
+*Uses [`subscription.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/subscription.model.js), [`subscription.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/subscription.controller.js), and [`subscription.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/subscription.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. POST /api/v1/subscriptions/c/:channelId                                  │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT                                                 │
 │    • Receives: URL param :channelId                                         │
 │    • Returns: 200 OK with { subscribed: true/false }                        │
@@ -569,7 +569,7 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 │      creates it (subscribes).                                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. GET /api/v1/subscriptions/c/:channelId                                   │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT                                                 │
 │    • Receives: URL param :channelId                                         │
 │    • Returns: 200 OK with array of subscribers (with avatar & username)     │
@@ -577,7 +577,7 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 │      the subscriber field from the User model.                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 3. GET /api/v1/subscriptions/u/:subscriberId                                │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT                                                 │
 │    • Receives: URL param :subscriberId                                      │
 │    • Returns: 200 OK with array of channels followed by this user           │
@@ -589,27 +589,27 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 ---
 
 ## C. Like Routes (`/api/v1/likes`) — 4 Routes
-*Requires creating `src/models/like.model.js`*
+*Uses [`like.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/like.model.js), [`like.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/like.controller.js), and [`like.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/like.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. POST /api/v1/likes/toggle/v/:videoId                                     │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Receives: :videoId. Returns: { isLiked: true/false }                   │
 │    • Logic: Toggles like document for (video: videoId, likedBy: req.user).  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. POST /api/v1/likes/toggle/c/:commentId                                   │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Receives: :commentId. Returns: { isLiked: true/false }                 │
 │    • Logic: Toggles like document for comment.                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 3. POST /api/v1/likes/toggle/t/:tweetId                                     │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Receives: :tweetId. Returns: { isLiked: true/false }                   │
 │    • Logic: Toggles like document for community tweet/post.                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 4. GET /api/v1/likes/videos                                                 │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Returns: 200 OK with array of liked videos with creator details        │
 │    • Logic: Aggregates all like docs where likedBy: req.user._id and video  │
 │      field is populated, returning the user's "Liked Videos" collection.    │
@@ -619,27 +619,27 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 ---
 
 ## D. Comment Routes (`/api/v1/comments`) — 4 Routes
-*Requires creating `src/models/comment.model.js`*
+*Uses [`comment.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/comment.model.js), [`comment.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/comment.controller.js), and [`comment.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/comment.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. GET /api/v1/comments/:videoId                                            │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Receives: :videoId, ?page=1&limit=10                                   │
 │    • Returns: Paginated list of comments with author profile & like counts. │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. POST /api/v1/comments/:videoId                                           │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Receives: :videoId, body: { content: "Great video!" }                  │
 │    • Returns: 201 Created with the new comment document.                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 3. PATCH /api/v1/comments/c/:commentId                                      │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Receives: :commentId, body: { content: "Updated comment text" }        │
 │    • Returns: 200 OK with updated comment.                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 4. DELETE /api/v1/comments/c/:commentId                                     │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Receives: :commentId. Returns: 200 OK deletion confirmation.           │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -647,37 +647,37 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 ---
 
 ## E. Playlist Routes (`/api/v1/playlists`) — 7 Routes
-*Requires creating `src/models/playlist.model.js`*
+*Uses [`playlist.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/playlist.model.js), [`playlist.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/playlist.controller.js), and [`playlist.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/playlist.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. POST /api/v1/playlists/                                                  │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Body: { name, description }                                            │
 │    • Returns: 201 Created with new playlist.                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. GET /api/v1/playlists/:playlistId                                        │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Returns: Playlist document with all contained video objects populated. │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 3. PATCH /api/v1/playlists/:playlistId                                      │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Body: { name, description } -> Updates playlist title/info.            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 4. DELETE /api/v1/playlists/:playlistId                                     │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Removes playlist from database.                                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 5. PATCH /api/v1/playlists/add/:videoId/:playlistId                         │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Logic: Appends videoId to playlist.videos array using $addToSet.       │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 6. PATCH /api/v1/playlists/remove/:videoId/:playlistId                      │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Logic: Removes videoId from playlist.videos using $pull.               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 7. GET /api/v1/playlists/user/:userId                                       │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Returns: All playlists created by a specific user or channel.          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -685,25 +685,25 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 ---
 
 ## F. Tweet & Community Routes (`/api/v1/tweets`) — 4 Routes
-*Requires creating `src/models/tweet.model.js`*
+*Uses [`tweet.model.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/models/tweet.model.js), [`tweet.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/tweet.controller.js), and [`tweet.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/tweet.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. POST /api/v1/tweets/                                                     │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Body: { content: "Livestream starting at 5 PM!" }                      │
 │    • Returns: 201 Created with tweet document.                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. GET /api/v1/tweets/user/:userId                                          │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Returns: All community posts published by the given creator.           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 3. PATCH /api/v1/tweets/:tweetId                                            │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Body: { content: "Updated announcement" }                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 4. DELETE /api/v1/tweets/:tweetId                                           │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Deletes creator community post.                                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -711,12 +711,12 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 ---
 
 ## G. Creator Studio Dashboard Routes (`/api/v1/dashboard`) — 2 Routes
-*Uses existing models*
+*Uses [`dashboard.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/dashboard.controller.js) and [`dashboard.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/dashboard.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. GET /api/v1/dashboard/stats                                              │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT                                                 │
 │    • Returns: Channel metrics:                                              │
 │      {                                                                      │
@@ -729,7 +729,7 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 │      counting subscriptions, and counting likes on all uploaded videos.     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 2. GET /api/v1/dashboard/videos                                             │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: verifyJWT                                                 │
 │    • Returns: List of all creator's uploaded videos with publish toggle,    │
 │      views, likes count, and upload date for YouTube Studio table.          │
@@ -739,11 +739,12 @@ These 31 routes are planned for the upcoming branches to turn your project into 
 ---
 
 ## H. Health Check Route (`/api/v1/healthcheck`) — 1 Route
+*Uses [`healthcheck.controller.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/controllers/healthcheck.controller.js) and [`healthcheck.routes.js`](file:///media/shubhamdhakre/ACER/YoutubeClone/src/routes/healthcheck.routes.js)*
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ 1. GET /api/v1/healthcheck                                                  │
-│    • Status: ⏳ PENDING                                                     │
+│    • Status: ✅ DONE & WORKING                                              │
 │    • Middlewares: None                                                      │
 │    • Returns: 200 OK { status: "OK", uptime: 1245.8, timestamp: ... }       │
 │    • Logic: Simple ping used by Docker, load balancers, and monitoring tools│

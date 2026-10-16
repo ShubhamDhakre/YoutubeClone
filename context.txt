@@ -1,0 +1,835 @@
+================================================================================
+YOUTUBE CLONE BACKEND — COMPLETE PROJECT CONTEXT, ARCHITECTURE & LOGIC ("context.txt")
+================================================================================
+Document Purpose:
+This file contains 100% of the project information, architecture, database schemas,
+middleware pipelines, helper utilities, done routes, pending routes, business logic,
+and coding conventions for the YouTube Clone Backend project.
+Any AI reading this file has full, self-contained knowledge to immediately understand,
+debug, refactor, or build any feature of this codebase without missing any detail.
+
+Last Updated: October 2026
+Author: Shubham Dhakre
+Project Name: youtubeclone
+Repository Path: /media/shubhamdhakre/ACER/YoutubeClone
+Package Type: ES Module ("type": "module" in package.json)
+Runtime: Node.js (v18+) with Express 5.x and Mongoose 9.x
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+1. Project Overview & Tech Stack
+2. Complete Directory Structure
+3. Environment Variables & Configuration
+4. Core Architectural Patterns & Conventions
+5. Utility Layer (asyncHandler, ApiError, ApiResponse)
+6. Cloud & Storage Services (Cloudinary + Multer)
+7. Database Connection & Lifecycle
+8. Data Models & Schemas (Existing & Planned)
+9. Middlewares (Authentication & File Handling)
+10. All 11 Done & Working Routes (Detailed Specifications)
+11. Planned / Pending Routes (Roadmap & Implementation Blueprint)
+12. Key Edge Cases, Quirks, and Implementation Gotchas
+13. Guide for Future AI / Developers (How to Extend This Project)
+
+================================================================================
+1. PROJECT OVERVIEW & TECH STACK
+================================================================================
+This is a production-grade, enterprise-modeled backend API for a YouTube-like
+video hosting and social media platform. It implements secure user authentication
+using dual JSON Web Tokens (Access + Refresh tokens) stored in HTTP-only cookies,
+media upload management through Multer and Cloudinary, MongoDB aggregation pipelines
+for channel stats and watch histories, and standardized RESTful responses.
+
+Dependencies (from package.json):
+- "express": "^5.2.1"          -> Web framework for routing and middleware.
+- "mongoose": "^9.11.1"        -> MongoDB ODM for modeling and aggregation.
+- "mongoose-aggregate-paginate-v2": "^1.1.5" -> Pagination plugin for aggregation queries.
+- "bcrypt": "^6.0.0"           -> Secure password hashing with salt rounds.
+- "jsonwebtoken": "^9.0.3"     -> Stateless Access Tokens and stateful Refresh Tokens.
+- "cookie-parser": "^1.4.7"    -> Parse and set HTTP-only cookies.
+- "cors": "^2.8.6"             -> Cross-Origin Resource Sharing.
+- "dotenv": "^18.0.6"          -> Environment variable management.
+- "multer": "^2.4.0"           -> Multipart/form-data handler for local disk storage.
+- "cloudinary": "^2.11.0"      -> Cloud storage SDK for media hosting.
+
+DevDependencies:
+- "nodemon": "^3.1.14"         -> Auto-restarting development server.
+- "prettier": "^3.9.9"         -> Code formatting.
+
+NPM Scripts:
+- "npm run dev": runs "nodemon src/index.js"
+- "npm start": runs "node src/index.js"
+
+================================================================================
+2. COMPLETE DIRECTORY STRUCTURE
+================================================================================
+YoutubeClone/
+├── .env                         # Local environment secret variables
+├── .env.example                 # Example environment variable template
+├── .gitignore                   # Ignores node_modules, .env, public/temp/*
+├── .prettierrc                  # Prettier formatting rules
+├── .prettierignore              # Prettier ignore list
+├── package.json                 # Scripts, dependencies, metadata
+├── package-lock.json            # Dependency tree lock
+├── bluePrint.md                 # Architectural diagrams, flows, and DB relations
+├── working.md                   # Operational route-by-route guide
+├── notes                        # Scratch notes
+├── context.txt                  # THIS COMPLETE CONTEXT FILE
+├── public/
+│   └── temp/                    # Temp directory where Multer saves incoming files
+└── src/
+    ├── index.js                 # Entry point: loads .env, connects DB, starts server
+    ├── app.js                   # Configures Express app, global middlewares & routes
+    ├── constants.js             # Shared constants (DB_NAME = "YT_Clone_DB")
+    ├── db/
+    │   └── db.connect.js        # Mongoose database connection logic
+    ├── middlewares/
+    │   ├── auth.middleware.js   # verifyJWT middleware for route authentication
+    │   └── multer..middleware.js# Multer diskStorage config (Note double dot in filename)
+    ├── models/
+    │   ├── user.model.js        # User Mongoose model + bcrypt hooks + JWT methods
+    │   ├── video.model.js       # Video Mongoose model + pagination plugin
+    │   └── subscription.model.js# Subscription channel-subscriber relation model
+    ├── routes/
+    │   └── user.routes.js       # Express router for all user-related endpoints
+    ├── controllers/
+    │   └── user.controller.js   # Business logic for all 11 user endpoints
+    ├── services/
+    │   └── cloudinary.js        # Upload file to Cloudinary and unlink local file
+    └── utils/
+        ├── ApiError.js          # Standardized Error class
+        ├── ApiResponse.js        # Standardized Response class
+        └── asyncHandler.js       # Higher-order try-catch wrapper for async functions
+
+================================================================================
+3. ENVIRONMENT VARIABLES & CONFIGURATION
+================================================================================
+The project requires the following environment variables (stored in .env):
+
+PORT=8000
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net
+ACCESS_TOKEN_SECRET=<long-random-secret-key-for-access-tokens>
+ACCESS_TOKEN_EXPIRY=1d
+REFRESH_TOKEN_SECRET=<long-random-secret-key-for-refresh-tokens>
+REFRESH_TOKEN_EXPIRY=10d
+CLOUDINARY_CLOUD_NAME=<your-cloudinary-cloud-name>
+CLOUDINARY_API_KEY=<your-cloudinary-api-key>
+CLOUDINARY_API_SECRET=<your-cloudinary-api-secret>
+CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>
+CORS_ORIGIN=*
+NODE_ENV=development
+
+Key Points:
+- In src/index.js, dotenv.config is invoked with `{ path: "./.env" }`.
+- In src/services/cloudinary.js, dotenv.config() is re-invoked and string values are `.trim()`med to prevent whitespace issues in credentials.
+- When generating JWTs, user.generateAccessToken uses ACCESS_TOKEN_SECRET and ACCESS_TOKEN_EXPIRY.
+- user.generateRefreshToken uses REFRESH_TOKEN_SECRET and REFRESH_TOKEN_EXPIRY.
+
+================================================================================
+4. CORE ARCHITECTURAL PATTERNS & CONVENTIONS
+================================================================================
+1. Asynchronous Error Handling:
+   Every controller and middleware function is wrapped in `asyncHandler`.
+   There is no repetitive `try { ... } catch (err)` inside individual route handlers.
+   If validation fails or a condition is violated, the code throws `new ApiError(code, message)`.
+   `asyncHandler` intercepts the error and returns a formatted JSON response.
+
+2. Consistent API Response Shape:
+   Success responses always return:
+   {
+     "statusCode": 200 | 201,
+     "data": <Object | Array>,
+     "message": "<Human readable message>",
+     "success": true
+   }
+   Error responses always return:
+   {
+     "success": false,
+     "message": "<Error message>"
+   }
+
+3. Two-Step File Upload Flow:
+   - Step A: Client sends multipart/form-data. Multer intercepts the file and saves it
+     temporarily to `./public/temp/<filename>`.
+   - Step B: Controller passes local path to `uploadOnCloudinary(localFilePath)`.
+     Cloudinary uploads the media asset to the cloud and returns a secure HTTPS URL.
+   - Step C: The temporary file on `./public/temp` is deleted via `fs.unlinkSync()`,
+     regardless of whether the upload succeeded or failed.
+
+4. Dual JWT Authentication & Refresh Cycle:
+   - Access Token: Short expiration (e.g. 1 day), contains user identity (`_id`, `email`,
+     `userName`, `fullName`). Passed via Cookie or `Authorization: Bearer <token>`.
+   - Refresh Token: Long expiration (e.g. 10 days), contains only `_id`. Stored in DB
+     on user document (`user.refreshToken`) and sent as an HTTP-only cookie.
+   - Logout clears cookies and unsets `user.refreshToken` from the DB.
+   - Token refresh matches the incoming refresh token against the DB record to prevent replay attacks.
+
+================================================================================
+5. UTILITY LAYER (CODE & LOGIC)
+================================================================================
+
+--- A. asyncHandler (src/utils/asyncHandler.js) ---
+Code:
+```javascript
+const asyncHandler = (fn) => {
+  return async (req, res, next) => {
+    try {
+      await fn(req, res, next);
+    } catch (err) {
+      res.status(err.statusCode || err.code || 500).json({
+        success: false,
+        message: err.message
+      });
+    }
+  };
+};
+export { asyncHandler };
+```
+Purpose:
+Eliminates boilerplate try/catch blocks. Catches both synchronous and rejected
+asynchronous errors, automatically returning the HTTP status code (defaulting to 500)
+and the error message.
+
+--- B. ApiError (src/utils/ApiError.js) ---
+Code:
+```javascript
+class ApiError extends Error {
+  constructor(
+    statusCode,
+    message = "Something went wrong",
+    errors = [],
+    stack = ""
+  ) {
+    super(message);
+    this.statusCode = statusCode;
+    this.data = null;
+    this.message = message;
+    this.success = false;
+    this.errors = errors;
+
+    if (stack) {
+      this.stack = stack;
+    } else {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+}
+export { ApiError };
+```
+Purpose:
+Subclasses JavaScript's native Error to attach HTTP `statusCode`, custom error
+details (`errors` array), and an operational `success = false` flag.
+
+--- C. ApiResponse (src/utils/ApiResponse.js) ---
+Code:
+```javascript
+class ApiResponse {
+  constructor(statusCode, data, message = "Success") {
+    this.statusCode = statusCode;
+    this.data = data;
+    this.message = message;
+    this.success = statusCode < 400;
+  }
+}
+export { ApiResponse };
+```
+Purpose:
+Guarantees consistent JSON output structure for frontend consumption. Sets `success: true`
+whenever `statusCode < 400`.
+
+================================================================================
+6. CLOUD & STORAGE SERVICES
+================================================================================
+
+--- A. Multer Configuration (src/middlewares/multer..middleware.js) ---
+*Note: The filename currently has two dots (`multer..middleware.js`).*
+Code:
+```javascript
+import multer from "multer";
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "./public/temp");
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.originalname + '-' + uniqueSuffix);
+  }
+});
+
+export const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 1000000 * 1000 // 1000MB limit
+  }
+});
+```
+Storage Details:
+- Files are saved in `./public/temp`.
+- Filename format: `<originalName>-<timestamp>-<randomInteger>`
+- Max file size limit: 1000 MB (supports video uploads).
+
+--- B. Cloudinary Service (src/services/cloudinary.js) ---
+Code:
+```javascript
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+cloudinary.config({ 
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME?.trim(), 
+  api_key: process.env.CLOUDINARY_API_KEY?.trim(),
+  api_secret: process.env.CLOUDINARY_API_SECRET?.trim()
+});
+
+const uploadOnCloudinary = async (localFilePath) => {
+  try {
+    if (!localFilePath) return null;
+
+    cloudinary.config({ 
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME?.trim(), 
+      api_key: process.env.CLOUDINARY_API_KEY?.trim(),
+      api_secret: process.env.CLOUDINARY_API_SECRET?.trim()
+    });
+    
+    const uploadResult = await cloudinary.uploader.upload(localFilePath, {
+      resource_type: "auto"
+    });
+
+    if (fs.existsSync(localFilePath)) {
+      fs.unlinkSync(localFilePath);
+    }
+
+    return uploadResult;
+  } catch (error) {
+    console.error("Cloudinary upload error: ", error);
+    if (fs.existsSync(localFilePath)) {
+      fs.unlinkSync(localFilePath);
+    }
+    return null;
+  }
+};
+
+export { uploadOnCloudinary };
+```
+Logic:
+- Accepts a local file path.
+- Configures Cloudinary (with `.trim()` to handle potential newline/space issues in `.env`).
+- Uploads with `resource_type: "auto"` (supports images, videos, audio).
+- Automatically removes the local file using `fs.unlinkSync(localFilePath)` on both success and failure.
+- Returns the Cloudinary upload object (containing `.url`, `.secure_url`, `.duration`, etc.) or `null`.
+
+================================================================================
+7. DATABASE CONNECTION & SERVER LIFECYCLE
+================================================================================
+
+--- Constants (src/constants.js) ---
+`export const DB_NAME = "YT_Clone_DB"`
+
+--- Connection Logic (src/db/db.connect.js) ---
+```javascript
+import mongoose from "mongoose";
+import { DB_NAME } from "../constants.js";
+
+const connectDB = async () => {
+  try {
+    const connectionInstance = await mongoose.connect(
+      `${process.env.MONGODB_URI || process.env.MONGO_URL}/${DB_NAME}`
+    );
+    console.log(`\nMongoDB connected! DB HOST: ${connectionInstance.connection.host}`);
+  } catch (error) {
+    console.log("MongoDB connection error: ", error);
+    process.exit(1);
+  }
+};
+
+export default connectDB;
+```
+
+--- Server Bootstrapping (src/index.js) ---
+```javascript
+import dotenv from "dotenv";
+dotenv.config({ path: "./.env" });
+
+import { app } from "./app.js";
+import connectDB from "./db/db.connect.js";
+
+connectDB();
+
+app.listen(process.env.PORT || 8000, () => {
+  console.log(`⚙️  Server is running at port : ${process.env.PORT || 8000}`);
+});
+```
+
+--- Express Application Setup (src/app.js) ---
+```javascript
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+
+const app = express();
+
+app.use(cors());
+app.use(express.json({ limit: "16kb" }));
+app.use(express.urlencoded({ extended: true, limit: "16kb" }));
+app.use(cookieParser());
+app.use(express.static("public"));
+
+export { app };
+
+import userRouter from "./routes/user.routes.js";
+app.use("/api/v1/users", userRouter);
+```
+
+================================================================================
+8. DATA MODELS & SCHEMAS
+================================================================================
+
+--- A. User Model (src/models/user.model.js) ---
+Collection Name: `users`
+Schema Definition:
+- `userName`: String, required, unique, lowercase, trim, indexed.
+- `email`: String, required, unique, lowercase, trim.
+- `fullName`: String, required, trim.
+- `avatar`: String (Cloudinary URL), required.
+- `coverImage`: String (Cloudinary URL), optional.
+- `password`: String, required (hashed via bcrypt).
+- `watchHistory`: Array of ObjectId referencing `Video` model.
+- `refreshToken`: String, optional (current active refresh token).
+- `timestamps`: true (adds `createdAt` and `updatedAt`).
+
+Hooks & Methods:
+1. `pre("save")`:
+   ```javascript
+   userSchema.pre("save", async function () {
+     if (!this.isModified("password")) return;
+     this.password = await bcrypt.hash(this.password, 10);
+   });
+   ```
+   Hashes password with 10 salt rounds before saving only if the password field was modified.
+2. `methods.isPasswordCorrect(password)`:
+   Compares plaintext password with hashed password using `bcrypt.compare(password, this.password)`.
+3. `methods.generateAccessToken()`:
+   Signs JWT containing `{ _id, email, userName, fullName }` using `process.env.ACCESS_TOKEN_SECRET`
+   and expiry `process.env.ACCESS_TOKEN_EXPIRY`.
+4. `methods.generateRefreshToken()`:
+   Signs JWT containing `{ _id }` using `process.env.REFRESH_TOKEN_SECRET`
+   and expiry `process.env.REFRESH_TOKEN_EXPIRY`.
+
+--- B. Video Model (src/models/video.model.js) ---
+Collection Name: `videos`
+Schema Definition:
+- `videoFile`: String (Cloudinary URL), required.
+- `thumbnail`: String (Cloudinary URL), required.
+- `title`: String, required.
+- `description`: String, required.
+- `duration`: Number (in seconds, retrieved from Cloudinary metadata), required.
+- `views`: Number, default: 0.
+- `isPublished`: Boolean, default: true.
+- `owner`: ObjectId referencing `User` model.
+- `timestamps`: true.
+Plugin:
+- `videoSchema.plugin(mongooseAggregatePaginate)`: Enables aggregation-based pagination.
+
+--- C. Subscription Model (src/models/subscription.model.js) ---
+Collection Name: `subscriptions`
+Schema Definition:
+- `subscriber`: ObjectId referencing `User` (the user who is subscribing/following).
+- `channel`: ObjectId referencing `User` (the channel being subscribed to).
+- `timestamps`: true.
+Logic Relationship:
+- To count a channel's subscribers: count documents where `channel == channelId`.
+- To count channels a user subscribed to: count documents where `subscriber == userId`.
+
+--- D. Planned Future Models (To Be Created) ---
+1. Like Model (`src/models/like.model.js`):
+   - `video`: ObjectId ref `Video` (optional)
+   - `comment`: ObjectId ref `Comment` (optional)
+   - `tweet`: ObjectId ref `Tweet` (optional)
+   - `likedBy`: ObjectId ref `User` (required)
+   - `timestamps`: true
+2. Comment Model (`src/models/comment.model.js`):
+   - `content`: String, required
+   - `video`: ObjectId ref `Video`, required
+   - `owner`: ObjectId ref `User`, required
+   - `timestamps`: true
+   - Plugin: `mongooseAggregatePaginate`
+3. Playlist Model (`src/models/playlist.model.js`):
+   - `name`: String, required
+   - `description`: String, required
+   - `videos`: Array of ObjectId ref `Video`
+   - `owner`: ObjectId ref `User`, required
+   - `timestamps`: true
+4. Tweet Model (`src/models/tweet.model.js`):
+   - `content`: String, required
+   - `owner`: ObjectId ref `User`, required
+   - `timestamps`: true
+
+================================================================================
+9. MIDDLEWARES (AUTHENTICATION & VERIFICATION)
+================================================================================
+
+--- JWT Verification Middleware (src/middlewares/auth.middleware.js) ---
+Export: `verifyJWT`
+Code:
+```javascript
+import { asyncHandler } from "../utils/asyncHandler.js";
+import jwt from "jsonwebtoken";
+import { ApiError } from "../utils/ApiError.js";
+import { User } from "../models/user.model.js";
+
+export const verifyJWT = asyncHandler(async (req, _, next) => {
+  try {
+    const token =
+      req.cookies?.accessToken ||
+      req.header("Authorization")?.replace("Bearer ", "");
+
+    if (!token) {
+      throw new ApiError(401, "Unauthorized request");
+    }
+
+    const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    const user = await User.findById(decodedToken?._id).select("-password -refreshToken");
+
+    if (!user) {
+      throw new ApiError(401, "Invalid Access Token");
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    throw new ApiError(401, error?.message || "Invalid Access Token");
+  }
+});
+```
+Flow:
+1. Checks for access token in cookies (`req.cookies.accessToken`) or HTTP Authorization header (`Bearer <token>`).
+2. Throws `ApiError(401, "Unauthorized request")` if token is missing.
+3. Cryptographically verifies token with `process.env.ACCESS_TOKEN_SECRET`.
+4. Fetches user from DB by decoded `_id`, stripping out `password` and `refreshToken`.
+5. Attaches the clean user object to `req.user` and calls `next()`.
+
+================================================================================
+10. ALL 11 DONE & WORKING ROUTES (DETAILED SPECIFICATIONS)
+================================================================================
+Base Router URL: `/api/v1/users`
+File: `src/routes/user.routes.js`
+Controller: `src/controllers/user.controller.js`
+
+--------------------------------------------------------------------------------
+ROUTE 1: POST /api/v1/users/register
+--------------------------------------------------------------------------------
+- Purpose: Registers a new user account with profile avatar and optional cover image.
+- Access: Public
+- Middleware: `upload.fields([{ name: "avatar", maxCount: 1 }, { name: "coverImage", maxCount: 1 }])`
+- Request Headers: `Content-Type: multipart/form-data`
+- Request Body Fields:
+  * `fullName` (String, Required)
+  * `email` (String, Required)
+  * `userName` (String, Required - also accepts `username` or `userName `)
+  * `password` (String, Required)
+- Files:
+  * `avatar` (File, Required)
+  * `coverImage` (File, Optional)
+- Controller Execution Logic:
+  1. Trims all text fields. If any required field is missing, throws `ApiError(400, "All fields are required")`.
+  2. Queries DB: `User.findOne({ $or: [{ userName }, { email }] })`. If user exists, throws `ApiError(409, "User with email or username already exists")`.
+  3. Checks `req.files?.avatar?.[0]?.path`. If absent, throws `ApiError(400, "Avatar is required")`.
+  4. Calls `uploadOnCloudinary(avatarLocalPath)`. If upload fails, throws `ApiError(500, "Failed to upload avatar to Cloudinary")`.
+  5. If `coverImageLocalPath` exists, uploads it to Cloudinary.
+  6. Creates user: `User.create({ fullName, email, userName: userName.toLowerCase(), password, avatar: avatar.url, coverImage: coverImage?.url || "" })`.
+  7. Mongoose `pre("save")` hook runs automatically, hashing `password` with bcrypt (10 rounds).
+  8. Fetches created user document without `password` and `refreshToken`.
+  9. Returns HTTP 201 with `ApiResponse(200, createdUser, "user registered successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 2: POST /api/v1/users/login
+--------------------------------------------------------------------------------
+- Purpose: Authenticates existing user, returns access & refresh tokens, sets HTTP-only cookies.
+- Access: Public
+- Middleware: None
+- Request Body (`application/json` or `urlencoded`):
+  * `email` OR `userName` (String, Required)
+  * `password` (String, Required)
+- Controller Execution Logic:
+  1. Validates that either `email` or `userName` is provided, and `password` is provided. Throws `ApiError(400)` if missing.
+  2. Queries DB with `$or` matching lowercased username or email. If not found, throws `ApiError(404, "User does not exist")`.
+  3. Validates password via `await user.isPasswordCorrect(password)`. If invalid, throws `ApiError(401, "Invalid user credentials")`.
+  4. Calls internal helper `generateAccessAndRefreshToken(user._id)`:
+     - Generates `accessToken` and `refreshToken`.
+     - Assigns `user.refreshToken = refreshToken`.
+     - Calls `user.save({ validateBeforeSave: false })` to store refresh token.
+  5. Strips `password` and `refreshToken` from the user response object.
+  6. Sets two cookies: `accessToken` and `refreshToken` with options `{ httpOnly: true, secure: process.env.NODE_ENV === "production" }`.
+  7. Returns HTTP 200 with `ApiResponse(200, { user: loggedInUser, accessToken, refreshToken }, "User logged in successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 3: POST /api/v1/users/logout
+--------------------------------------------------------------------------------
+- Purpose: Logs out the user by unsetting their refresh token from DB and clearing cookies.
+- Access: Secured (requires valid JWT)
+- Middleware: `verifyJWT`
+- Request Headers/Cookies: Cookie `accessToken` or Header `Authorization: Bearer <token>`
+- Controller Execution Logic:
+  1. Runs `User.findByIdAndUpdate(req.user._id, { $unset: { refreshToken: 1 } }, { new: true })`.
+  2. Clears `accessToken` and `refreshToken` cookies with `{ httpOnly: true, secure: process.env.NODE_ENV === "production" }`.
+  3. Returns HTTP 200 with `ApiResponse(200, {}, "User logged out successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 4: POST /api/v1/users/refresh-token
+--------------------------------------------------------------------------------
+- Purpose: Exchanges an existing valid refresh token for a fresh access & refresh token pair.
+- Access: Public / Token-based
+- Middleware: None
+- Request: Reads `req.cookies.refreshToken || req.body.refreshToken`
+- Controller Execution Logic:
+  1. If no refresh token provided, throws `ApiError(401, "Unauthorized request")`.
+  2. Verifies token with `jwt.verify(refreshTokenFromUser, process.env.REFRESH_TOKEN_SECRET)`.
+  3. Finds user by decoded `_id`. If not found, throws `ApiError(401, "Invalid Refresh Token")`.
+  4. Checks if stored `user.refreshToken !== refreshTokenFromUser`. If unequal (e.g. token was rotated or user logged out), throws `ApiError(401, "Invalid Refresh Token")`.
+  5. Calls `generateAccessAndRefreshToken(user._id)` to issue new token pair and save new refresh token in DB.
+  6. Sets cookies `newAccessToken` and `newRefreshToken`.
+  7. Returns HTTP 200 with `ApiResponse(200, { user, newAccessToken, newRefreshToken }, "User logged in successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 5: POST /api/v1/users/change-password
+--------------------------------------------------------------------------------
+- Purpose: Allows an authenticated user to update their account password.
+- Access: Secured
+- Middleware: `verifyJWT`
+- Request Body: `{ "oldPassword": "...", "newPassword": "..." }`
+- Controller Execution Logic:
+  1. Finds user document by `req.user._id`.
+  2. Verifies `await user.isPasswordCorrect(oldPassword)`. If false, throws `ApiError(401, "Invalid Current Password")`.
+  3. Assigns `user.password = newPassword`.
+  4. Calls `await user.save({ validateBeforeSave: false })`.
+  5. Mongoose `pre("save")` hook triggers and hashes `newPassword`.
+  6. Returns HTTP 200 with `ApiResponse(200, {}, "Password changed successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 6: GET /api/v1/users/current-user
+--------------------------------------------------------------------------------
+- Purpose: Returns the currently authenticated user's profile.
+- Access: Secured
+- Middleware: `verifyJWT`
+- Controller Execution Logic:
+  1. `verifyJWT` has already attached the sanitized user object to `req.user`.
+  2. Returns HTTP 200 with `ApiResponse(200, req.user, "Current user fetched successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 7: PATCH /api/v1/users/update-account
+--------------------------------------------------------------------------------
+- Purpose: Updates user's textual profile info (`fullName` and `email`).
+- Access: Secured
+- Middleware: `verifyJWT`
+- Request Body: `{ "fullName": "...", "email": "..." }`
+- Controller Execution Logic:
+  1. Checks that both `fullName` and `email` exist. If missing, throws `ApiError(400, "Full name and email are required")`.
+  2. Runs `User.findByIdAndUpdate(req.user._id, { $set: { fullName, email } }, { new: true }).select("-password -refreshToken")`.
+  3. Returns HTTP 200 with `ApiResponse(200, user, "User details updated successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 8: PATCH /api/v1/users/update-avatar
+--------------------------------------------------------------------------------
+- Purpose: Replaces user's profile avatar with a newly uploaded image file.
+- Access: Secured
+- Middleware: `verifyJWT`, `upload.single("avatar")`
+- Request: `multipart/form-data` with file field `avatar`.
+- Controller Execution Logic:
+  1. Extracts `req.file?.path`. If missing, throws `ApiError(400, "Avatar is required")`.
+  2. Calls `uploadOnCloudinary(avatarLocalPath)`. If upload fails, throws `ApiError(500, "Failed to upload avatar to Cloudinary")`.
+  3. Runs `User.findByIdAndUpdate(req.user?._id, { $set: { avatar: avatar.url } }, { new: true }).select("-password -refreshToken")`.
+  4. Returns HTTP 200 with `ApiResponse(200, user, "Avatar updated successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 9: PATCH /api/v1/users/update-cover-image
+--------------------------------------------------------------------------------
+- Purpose: Replaces user's channel banner/cover image.
+- Access: Secured
+- Middleware: `verifyJWT`, `upload.single("coverImage")`
+- Request: `multipart/form-data` with file field `coverImage`.
+- Controller Execution Logic:
+  1. Extracts `req.file?.path`. If missing, throws `ApiError(400, "Cover image is required")`.
+  2. Calls `uploadOnCloudinary(coverImageLocalPath)`. If upload fails, throws `ApiError(500, "Failed to upload cover image to Cloudinary")`.
+  3. Runs `User.findByIdAndUpdate(req.user?._id, { $set: { coverImage: coverImage.url } }, { new: true }).select("-password -refreshToken")`.
+  4. Returns HTTP 200 with `ApiResponse(200, user, "Cover image updated successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 10: GET /api/v1/users/c/:username
+--------------------------------------------------------------------------------
+*Note: In `src/routes/user.routes.js`, line 49 is written as `router.route("c/:username")`. Because `app.js` mounts the router at `/api/v1/users`, this corresponds to `/api/v1/users/c/:username`.*
+- Purpose: Fetches channel public profile with calculated subscriber count and viewer subscription status.
+- Access: Secured (requires `verifyJWT` to determine viewer's subscription status)
+- URL Param: `:username`
+- Controller Execution Logic (Aggregation Pipeline):
+  1. Reads `req.params?.userName || req.params?.username`. Throws `ApiError(400)` if missing.
+  2. First runs `User.findOne({ userName })`. If not found, throws `ApiError(404, "User not found")`.
+  3. Executes `User.aggregate([...])`:
+     - Stage 1: `$match`: matches `userName: userName.toLowerCase()`.
+     - Stage 2: `$lookup` from `videos` collection (`localField: "_id"`, `foreignField: "channel"`, `as: "subscriber"`).
+     - Stage 3: `$lookup` from `subscriptions` collection (`localField: "_id"`, `foreignField: "subscriber"`, `as: "subscribedTo"`).
+     - Stage 4: `$addFields`:
+       * `subscriberCount: { $size: "$subscribedTo" }`
+       * `channelSubscribers: { $size: "$subscribedTo" }`
+       * `isSubscribed: { $cond: { if: { $in: [req.user?._id, "$subscribedTo.subscriber"] }, then: true, else: false } }`
+     - Stage 5: `$project`:
+       `{ fullName: 1, userName: 1, avatar: 1, coverImage: 1, subscriberCount: 1, isSubscribed: 1, videoCount: 1, channelSubscribers: 1 }`
+  4. If `channel.length === 0`, throws `ApiError(404, "User channel not found")`.
+  5. Returns HTTP 200 with `ApiResponse(200, channel[0], "User channel profile fetched successfully")`.
+
+--------------------------------------------------------------------------------
+ROUTE 11: GET /api/v1/users/history
+--------------------------------------------------------------------------------
+- Purpose: Returns the full watch history of the authenticated user with video details and creator information.
+- Access: Secured
+- Middleware: `verifyJWT`
+- Controller Execution Logic (Nested Aggregation Pipeline):
+  1. Executes `User.aggregate([...])`:
+     - Stage 1: `$match: { _id: new mongoose.Types.ObjectId(req.user._id) }`
+     - Stage 2: `$lookup`:
+       * `from: "videos"`
+       * `localField: "watchHistory"`
+       * `foreignField: "_id"`
+       * `as: "watchHistory"`
+       * `pipeline`: Nested sub-pipeline on each matched video:
+         - `$lookup` from `"users"` where `localField: "owner"`, `foreignField: "_id"`, `as: "owner"`, with sub-projection `{ fullName: 1, userName: 1, avatar: 1 }`.
+         - `$addFields`: `{ owner: { $first: "$owner" } }` (converts the array from lookup into a single object).
+  2. Returns HTTP 200 with `ApiResponse(200, user[0], "Watch history fetched successfully")`.
+
+================================================================================
+11. PLANNED / PENDING ROUTES (ROADMAP & IMPLEMENTATION BLUEPRINT)
+================================================================================
+The following 31 routes are planned to complete the YouTube clone feature set:
+
+--- Module A: Video Management (/api/v1/videos) ---
+Uses: `video.model.js` (already created)
+1. `POST /api/v1/videos`: Upload video (Multer fields: `videoFile`, `thumbnail`, body: `title`, `description`).
+   - Controller extracts duration from Cloudinary upload response, saves video with `owner: req.user._id`.
+2. `GET /api/v1/videos`: Paginated video feed with search query and sorting.
+   - Query params: `page`, `limit`, `query`, `sortBy`, `sortType`, `userId`.
+   - Uses `Video.aggregatePaginate(...)`.
+3. `GET /api/v1/videos/:videoId`: Get single video by ID.
+   - Increments views (`$inc: { views: 1 }`).
+   - Adds `videoId` to `req.user.watchHistory` using `$addToSet`.
+4. `PATCH /api/v1/videos/:videoId`: Update title, description, or thumbnail.
+5. `DELETE /api/v1/videos/:videoId`: Delete video from DB and delete media assets from Cloudinary.
+6. `PATCH /api/v1/videos/toggle/publish/:videoId`: Toggles `isPublished` boolean flag.
+
+--- Module B: Subscriptions (/api/v1/subscriptions) ---
+Uses: `subscription.model.js` (already created)
+1. `POST /api/v1/subscriptions/c/:channelId`: Toggle subscription.
+   - If document with `{ subscriber: req.user._id, channel: channelId }` exists -> delete it.
+   - If it does not exist -> create it.
+2. `GET /api/v1/subscriptions/c/:channelId`: Get list of subscribers for a channel.
+3. `GET /api/v1/subscriptions/u/:subscriberId`: Get list of channels subscribed by a user.
+
+--- Module C: Likes (/api/v1/likes) ---
+Needs new model: `src/models/like.model.js`
+1. `POST /api/v1/likes/toggle/v/:videoId`: Toggle like on video.
+2. `POST /api/v1/likes/toggle/c/:commentId`: Toggle like on comment.
+3. `POST /api/v1/likes/toggle/t/:tweetId`: Toggle like on community tweet.
+4. `GET /api/v1/likes/videos`: Get list of all videos liked by authenticated user.
+
+--- Module D: Comments (/api/v1/comments) ---
+Needs new model: `src/models/comment.model.js`
+1. `GET /api/v1/comments/:videoId`: Get paginated comments for a video with author profile info.
+2. `POST /api/v1/comments/:videoId`: Add comment on a video (`{ content }`).
+3. `PATCH /api/v1/comments/c/:commentId`: Update comment text.
+4. `DELETE /api/v1/comments/c/:commentId`: Delete comment.
+
+--- Module E: Playlists (/api/v1/playlists) ---
+Needs new model: `src/models/playlist.model.js`
+1. `POST /api/v1/playlists`: Create playlist (`{ name, description }`).
+2. `GET /api/v1/playlists/:playlistId`: Get playlist by ID with populated videos.
+3. `PATCH /api/v1/playlists/:playlistId`: Update playlist name/description.
+4. `DELETE /api/v1/playlists/:playlistId`: Delete playlist.
+5. `PATCH /api/v1/playlists/add/:videoId/:playlistId`: Add video to playlist (`$addToSet`).
+6. `PATCH /api/v1/playlists/remove/:videoId/:playlistId`: Remove video from playlist (`$pull`).
+7. `GET /api/v1/playlists/user/:userId`: Get all playlists created by a user.
+
+--- Module F: Community Tweets (/api/v1/tweets) ---
+Needs new model: `src/models/tweet.model.js`
+1. `POST /api/v1/tweets`: Post a tweet (`{ content }`).
+2. `GET /api/v1/tweets/user/:userId`: Get creator tweets.
+3. `PATCH /api/v1/tweets/:tweetId`: Update tweet content.
+4. `DELETE /api/v1/tweets/:tweetId`: Delete tweet.
+
+--- Module G: Creator Dashboard (/api/v1/dashboard) ---
+1. `GET /api/v1/dashboard/stats`: Aggregated channel metrics: total video views, total subscribers, total videos, total likes.
+2. `GET /api/v1/dashboard/videos`: List all uploaded videos with metrics for creator studio table.
+
+--- Module H: Health Check (/api/v1/healthcheck) ---
+1. `GET /api/v1/healthcheck`: Returns 200 OK with server uptime and status.
+
+================================================================================
+12. KEY EDGE CASES, QUIRKS, AND IMPLEMENTATION GOTCHAS
+================================================================================
+When another AI or developer modifies this codebase, take note of these specific details:
+
+1. Double-dot Filename:
+   The multer middleware file is named `src/middlewares/multer..middleware.js` (with two dots).
+   Imports currently refer to `../middlewares/multer..middleware.js`. Do not break this import path.
+
+2. Route Path Definition in user.routes.js:
+   Line 49 is written as: `router.route("c/:username").get(verifyJWT, getUserChannelProfile)`.
+   Notice there is no leading slash (`"c/:username"` instead of `"/c/:username"`).
+   In Express router, both resolve to `/api/v1/users/c/:username`.
+
+3. Case Sensitivity in userName:
+   `userName` is saved in lowercase in DB: `userName: userName.toLowerCase()`.
+   Controllers support flexible input keys: `req.body.userName || req.body["userName "] || req.body.username`.
+
+4. Refresh Token Verification:
+   The `refreshAccessToken` controller verifies that the incoming token matches `user.refreshToken` in the DB.
+   If a user has logged out (which executes `$unset: { refreshToken: 1 }`), `refreshAccessToken` will reject with 401.
+
+5. Cookie Names in Refresh Token Route:
+   Notice in `refreshAccessToken`, the controller sets cookies named `newAccessToken` and `newRefreshToken`:
+   `res.cookie("newAccessToken", ...).cookie("newRefreshToken", ...)`.
+   In `loginUser`, the cookies are named `accessToken` and `refreshToken`.
+   Be aware of this distinction when managing client-side authentication cookies.
+
+6. Bcrypt Pre-save Hook:
+   The `userSchema.pre("save")` hook checks `if (!this.isModified("password")) return;`.
+   When updating tokens (in `generateAccessAndRefreshToken`) or other fields via `.save()`, always pass
+   `{ validateBeforeSave: false }` or ensure `password` is untouched so passwords are not re-hashed.
+
+7. Cloudinary Upload Cleanup:
+   `uploadOnCloudinary` guarantees that local files in `./public/temp` are removed via `fs.unlinkSync()`
+   both when upload succeeds AND when upload fails in the `catch` block.
+
+================================================================================
+13. GUIDE FOR FUTURE AI / DEVELOPERS (HOW TO EXTEND THIS PROJECT)
+================================================================================
+To implement any new feature or module in this codebase, follow this standard pattern:
+
+1. Model:
+   Create `src/models/<name>.model.js`.
+   Import `mongoose, { Schema } from "mongoose"`.
+   Export named model: `export const <ModelName> = mongoose.model("<ModelName>", schema)`.
+
+2. Controller:
+   Create `src/controllers/<name>.controller.js`.
+   Import `asyncHandler`, `ApiError`, `ApiResponse`, and required models.
+   Wrap each handler function with `asyncHandler(async (req, res) => { ... })`.
+   Throw `new ApiError(statusCode, message)` on validation or business errors.
+   Return `res.status(code).json(new ApiResponse(code, data, message))`.
+
+3. Router:
+   Create `src/routes/<name>.routes.js`.
+   Import `Router` from `"express"` and your controller handlers.
+   Protect sensitive routes with `verifyJWT`.
+   Use `upload.single(...)` or `upload.fields(...)` if handling file uploads.
+   Export default `router`.
+
+4. App Mount:
+   In `src/app.js`:
+   `import <name>Router from "./routes/<name>.routes.js";`
+   `app.use("/api/v1/<name>", <name>Router);`
+
+================================================================================
+END OF CONTEXT FILE — ALL PROJECT LOGIC FULLY PRESERVED
+================================================================================

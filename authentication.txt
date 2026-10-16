@@ -1,0 +1,608 @@
+================================================================================
+YOUTUBE CLONE BACKEND — COMPLETE AUTHENTICATION PROCESS & TOKEN ARCHITECTURE
+================================================================================
+File Name: authentication.txt
+Project: YouTube Clone Backend
+Location: Root Directory (/media/shubhamdhakre/ACER/YoutubeClone)
+Target Audience: Developers, AI Assistants, and System Architects
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+1. High-Level Summary: The Dual-Token Authentication Strategy
+2. Why Two Tokens? (Access Token vs. Refresh Token Explained)
+3. Password Security & Hashing (Bcrypt & Mongoose Hooks)
+4. Token Anatomy & Cryptographic Secrets
+   - A. Access Token (Payload, Expiry, Signing)
+   - B. Refresh Token (Payload, Expiry, Signing)
+5. Step-by-Step Flow 1: User Registration
+6. Step-by-Step Flow 2: User Login & Token Generation
+7. Step-by-Step Flow 3: Protecting Routes with `verifyJWT` Middleware
+8. Step-by-Step Flow 4: Silent Token Refresh (The Refresh Token Lifecycle)
+9. Step-by-Step Flow 5: User Logout & Session Revocation
+10. Step-by-Step Flow 6: Changing Password Safely
+11. End-to-End Visual Sequence Diagrams
+    - Diagram A: Login & Initial Token Delivery
+    - Diagram B: Accessing a Protected Endpoint
+    - Diagram C: Expired Access Token & Token Refresh Cycle
+    - Diagram D: Logout & Revocation
+12. Security Best Practices & Defensive Mechanisms Implemented
+13. Complete Code Reference (Model, Middleware, Controller)
+
+================================================================================
+1. HIGH-LEVEL SUMMARY: THE DUAL-TOKEN AUTHENTICATION STRATEGY
+================================================================================
+This project uses industry-standard, battle-tested JWT (JSON Web Token) Dual-Token
+Authentication combined with HTTP-Only Cookies and MongoDB Session Tracking.
+
+Key Concepts:
+- Access Token: Short-lived ticket used by the client for every API request.
+- Refresh Token: Long-lived credential used ONLY to obtain a new Access Token.
+- HTTP-Only Cookies: Tokens are stored in cookies that JavaScript running in the browser
+  CANNOT read, preventing Cross-Site Scripting (XSS) token theft.
+- Database Invalidation: The Refresh Token is stored in MongoDB on the user document.
+  When the user logs out, the database record is erased ($unset), immediately
+  invalidating the session even before the JWT cryptographically expires.
+
+================================================================================
+2. WHY TWO TOKENS? (ACCESS TOKEN VS. REFRESH TOKEN EXPLAINED)
+================================================================================
+Traditional single-token architectures have a dangerous flaw:
+- If a token lasts 30 days: If an attacker steals it, they have access for 30 days!
+- If a token lasts 15 minutes: The user would be forced to log in every 15 minutes,
+  ruining user experience!
+
+The Dual-Token Solution solves both problems:
+
++---------------------------+-----------------------------------+------------------------------------+
+| Feature                   | Access Token                      | Refresh Token                      |
++---------------------------+-----------------------------------+------------------------------------+
+| Primary Role              | Authorization for API endpoints   | Minting fresh Access Tokens        |
+| Lifetime                  | Short (e.g., 15 minutes to 1 day) | Long (e.g., 10 days to 30 days)    |
+| Payload Data              | Contains User ID, Email, Username | Contains ONLY User ID (_id)        |
+| Database Storage          | NOT stored in DB (Stateless)      | STORED in MongoDB (Stateful check) |
+| Sent on Everyday Requests | YES (in every secured API call)   | NO (only sent to /refresh-token)   |
+| Secret Key                | ACCESS_TOKEN_SECRET               | REFRESH_TOKEN_SECRET               |
+| Revocability              | Expires on its own quickly        | Can be revoked instantly in DB     |
++---------------------------+-----------------------------------+------------------------------------+
+
+How They Work Together:
+1. The user logs in once with username/password.
+2. The server hands the client BOTH an Access Token and a Refresh Token.
+3. The client uses the Access Token for regular API requests (e.g., fetching profile,
+   uploading video, viewing history).
+4. When the Access Token expires, the client silently calls `/api/v1/users/refresh-token`
+   using the Refresh Token.
+5. The server validates the Refresh Token against MongoDB. If valid, it sends a fresh
+   Access Token (and new Refresh Token). The user stays logged in seamlessly!
+6. If the user clicks "Logout", the server removes the Refresh Token from the database.
+   Now, even if someone had the old Refresh Token, it is useless!
+
+================================================================================
+3. PASSWORD SECURITY & HASHING (BCRYPT & MONGOOSE HOOKS)
+================================================================================
+Plaintext passwords must NEVER be saved in the database.
+
+File: src/models/user.model.js
+
+1. Automatic Hashing Before Saving:
+```javascript
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+
+  this.password = await bcrypt.hash(this.password, 10);
+});
+```
+- Trigger: Every time a User document is saved (e.g., on registration or password change).
+- Condition: `if (!this.isModified("password")) return;` ensures that updating the user's
+  avatar, cover image, or refresh token will NOT re-hash an already-hashed password.
+- Algorithm: Bcrypt with 10 salt rounds (computationally expensive to protect against
+  brute-force and rainbow table attacks).
+
+2. Secure Password Comparison:
+```javascript
+userSchema.methods.isPasswordCorrect = async function (password) {
+  return await bcrypt.compare(password, this.password);
+};
+```
+- Used during Login and Change Password routes.
+- Compares the raw incoming password with the stored hash using constant-time comparison
+  to protect against timing attacks.
+
+================================================================================
+4. TOKEN ANATOMY & CRYPTOGRAPHIC SECRETS
+================================================================================
+
+--- A. ACCESS TOKEN ---
+Method: `userSchema.methods.generateAccessToken` (src/models/user.model.js)
+```javascript
+userSchema.methods.generateAccessToken = function () {
+  return jwt.sign(
+    {
+      _id: this._id,
+      email: this.email,
+      userName: this.userName,
+      fullName: this.fullName,
+    },
+    process.env.ACCESS_TOKEN_SECRET,
+    {
+      expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
+    }
+  );
+};
+```
+- Payload:
+  * `_id`: User's MongoDB ObjectId
+  * `email`: User's email address
+  * `userName`: User's unique handle
+  * `fullName`: User's display name
+- Secret Key: `process.env.ACCESS_TOKEN_SECRET`
+- Expiry: `process.env.ACCESS_TOKEN_EXPIRY` (e.g., "1d")
+- Benefit: Since the Access Token carries basic user identity in its signed payload,
+  the server can immediately identify who is making the request.
+
+--- B. REFRESH TOKEN ---
+Method: `userSchema.methods.generateRefreshToken` (src/models/user.model.js)
+```javascript
+userSchema.methods.generateRefreshToken = function () {
+  return jwt.sign(
+    {
+      _id: this._id,
+    },
+    process.env.REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+    }
+  );
+};
+```
+- Payload: Contains ONLY `{ _id: this._id }`. (Minimal payload: if leaked, it reveals no email or name).
+- Secret Key: `process.env.REFRESH_TOKEN_SECRET` (Completely independent from the access secret).
+- Expiry: `process.env.REFRESH_TOKEN_EXPIRY` (e.g., "10d")
+- Stored on Database: Field `refreshToken: { type: String }` on User document.
+
+================================================================================
+5. STEP-BY-STEP FLOW 1: USER REGISTRATION
+================================================================================
+Endpoint: `POST /api/v1/users/register`
+Middleware: `upload.fields([{ name: "avatar", maxCount: 1 }, { name: "coverImage", maxCount: 1 }])`
+
+Step 1: Client submits `fullName`, `email`, `userName`, `password`, and file `avatar`.
+Step 2: Controller checks for missing fields. Throws `ApiError(400)` if any field is empty.
+Step 3: Controller queries MongoDB for existing user:
+        `User.findOne({ $or: [{ userName }, { email }] })`
+        If found, throws `ApiError(409, "User with email or username already exists")`.
+Step 4: Multer saves `avatar` temporarily to `./public/temp/`.
+Step 5: Controller uploads `avatar` to Cloudinary, receives permanent HTTPS URL, and
+        deletes the local file via `fs.unlinkSync()`.
+Step 6: Controller calls `User.create({ ..., password })`.
+Step 7: Mongoose `pre("save")` hook triggers automatically, hashing `password` via bcrypt.
+Step 8: Controller fetches the created user document excluding `password` and `refreshToken`:
+        `User.findById(user._id).select("-password -refreshToken")`
+Step 9: Returns HTTP 201 with `ApiResponse(200, createdUser, "user registered successfully")`.
+
+================================================================================
+6. STEP-BY-STEP FLOW 2: USER LOGIN & TOKEN GENERATION
+================================================================================
+Endpoint: `POST /api/v1/users/login`
+Access: Public
+
+Step 1: Client sends `userName` (or `email`) and `password`.
+Step 2: Validation check: Throws `ApiError(400)` if credentials are missing.
+Step 3: Database Lookup:
+        `User.findOne({ $or: [{ userName: userName.toLowerCase() }, { email: email.toLowerCase() }] })`
+        If user does not exist, throws `ApiError(404, "User does not exist")`.
+Step 4: Password Verification:
+        `await user.isPasswordCorrect(password)`
+        If bcrypt comparison fails, throws `ApiError(401, "Invalid user credentials")`.
+Step 5: Token Generation via internal helper `generateAccessAndRefreshToken(user._id)`:
+        a. `const accessToken = user.generateAccessToken();`
+        b. `const refreshToken = user.generateRefreshToken();`
+        c. `user.refreshToken = refreshToken;`
+        d. `await user.save({ validateBeforeSave: false });`
+           (Saves the refresh token to MongoDB. `validateBeforeSave: false` skips field re-validation).
+Step 6: Sanitization: Fetches user object with `.select("-password -refreshToken")`.
+Step 7: Cookie Options Configuration:
+        ```javascript
+        const options = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production"
+        };
+        ```
+        * `httpOnly: true`: Blocks client-side JavaScript (`document.cookie`) from reading tokens.
+        * `secure: true`: Tokens only transmitted over HTTPS in production.
+Step 8: Response:
+        Attaches cookies `accessToken` and `refreshToken`.
+        Returns HTTP 200 with JSON payload containing user data, `accessToken`, and `refreshToken`.
+
+================================================================================
+7. STEP-BY-STEP FLOW 3: PROTECTING ROUTES WITH `verifyJWT` MIDDLEWARE
+================================================================================
+File: `src/middlewares/auth.middleware.js`
+Usage: Any secured route passes `verifyJWT` before the controller handler.
+Example: `router.route("/current-user").get(verifyJWT, getCurrentUser);`
+
+How `verifyJWT` works under the hood:
+
+```
+[Incoming Request]
+        │
+        ▼
+Extract Token:
+  1. req.cookies?.accessToken  (preferred for web browsers)
+  2. OR req.header("Authorization")?.replace("Bearer ", "") (for mobile / Postman)
+        │
+        ├─► If token is missing:
+        │     THROW new ApiError(401, "Unauthorized request")
+        │
+        ▼
+Cryptographic Signature Verification:
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)
+        │
+        ├─► If invalid / expired / tampered:
+        │     THROW new ApiError(401, "Invalid Access Token")
+        │
+        ▼
+Fetch Authenticated User from MongoDB:
+  User.findById(decodedToken?._id).select("-password -refreshToken")
+        │
+        ├─► If user was deleted:
+        │     THROW new ApiError(401, "Invalid Access Token")
+        │
+        ▼
+Attach to Request:
+  req.user = user;
+        │
+        ▼
+  next();  ───► Passes control to the controller handler!
+```
+
+Inside the controller handler:
+The controller simply accesses `req.user._id`, `req.user.userName`, etc. without
+needing to query the database again!
+
+================================================================================
+8. STEP-BY-STEP FLOW 4: SILENT TOKEN REFRESH (THE REFRESH TOKEN LIFECYCLE)
+================================================================================
+Endpoint: `POST /api/v1/users/refresh-token`
+Access: Public / Token-based
+
+What happens when an Access Token expires?
+1. The client makes an API request with an expired `accessToken`.
+2. `verifyJWT` rejects with `401 Unauthorized ("jwt expired")`.
+3. The client's frontend interceptor (e.g. Axios response interceptor) catches the 401.
+4. Instead of logging the user out, the frontend sends a request to `/api/v1/users/refresh-token`.
+
+Server-Side Execution in `refreshAccessToken`:
+Step 1: Extracts `refreshTokenFromUser` from `req.cookies.refreshToken || req.body.refreshToken`.
+        If missing, throws `ApiError(401, "Unauthorized request")`.
+Step 2: Cryptographically verifies the token:
+        `const decodedToken = jwt.verify(refreshTokenFromUser, process.env.REFRESH_TOKEN_SECRET);`
+Step 3: Fetches user document from MongoDB by `decodedToken._id`.
+        If user not found, throws `ApiError(401, "Invalid Refresh Token")`.
+Step 4: CRITICAL SECURITY CHECK (Database Verification):
+        ```javascript
+        if (user.refreshToken !== refreshTokenFromUser) {
+          throw new ApiError(401, "Invalid Refresh Token");
+        }
+        ```
+        Why this check is vital:
+        - If a user logged out, `user.refreshToken` is undefined in the DB. Attempt rejected!
+        - If the token was already rotated/refreshed, old tokens are rejected!
+        - If a malicious actor tries to use a stolen revoked token, it is blocked!
+Step 5: Rotation: Generates a brand new pair of tokens:
+        `const { newAccessToken, newRefreshToken } = await generateAccessAndRefreshToken(user._id);`
+        (The user's database record is updated with `newRefreshToken`).
+Step 6: Attaches new cookies (`newAccessToken`, `newRefreshToken`) and returns HTTP 200.
+Step 7: Frontend receives the new tokens and retries the original failed request seamlessly!
+
+================================================================================
+9. STEP-BY-STEP FLOW 5: USER LOGOUT & SESSION REVOCATION
+================================================================================
+Endpoint: `POST /api/v1/users/logout`
+Middleware: `verifyJWT` (User must be logged in to log out)
+
+Step 1: `verifyJWT` verifies the caller's access token and identifies `req.user._id`.
+Step 2: Invalidate in Database (Session Revocation):
+        ```javascript
+        await User.findByIdAndUpdate(
+          req.user._id,
+          {
+            $unset: { refreshToken: 1 } // deletes the refreshToken field from MongoDB
+          },
+          { new: true }
+        );
+        ```
+Step 3: Clear Browser Cookies:
+        ```javascript
+        const options = {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production"
+        };
+
+        return res
+          .status(200)
+          .clearCookie("accessToken", options)
+          .clearCookie("refreshToken", options)
+          .json(new ApiResponse(200, {}, "User logged out successfully"));
+        ```
+Result:
+- The browser no longer holds the cookies.
+- Even if a copy of the old refresh token was saved elsewhere, it will FAIL future
+  calls to `/refresh-token` because `user.refreshToken` in MongoDB is gone!
+
+================================================================================
+10. STEP-BY-STEP FLOW 6: CHANGING PASSWORD SAFELY
+================================================================================
+Endpoint: `POST /api/v1/users/change-password`
+Middleware: `verifyJWT`
+Request Body: `{ "oldPassword": "...", "newPassword": "..." }`
+
+Step 1: Finds user by `req.user._id`:
+        `const user = await User.findById(req.user._id);`
+Step 2: Compares current password:
+        `const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);`
+        If false, throws `ApiError(401, "Invalid Current Password")`.
+Step 3: Assigns new plaintext password:
+        `user.password = newPassword;`
+Step 4: Saves document:
+        `await user.save({ validateBeforeSave: false });`
+Step 5: Mongoose's `pre("save")` hook triggers because `isModified("password")` is true!
+        Bcrypt hashes the new password with 10 salt rounds before saving.
+Step 6: Returns HTTP 200 with `ApiResponse(200, {}, "Password changed successfully")`.
+
+================================================================================
+11. END-TO-END VISUAL SEQUENCE DIAGRAMS
+================================================================================
+
+--- DIAGRAM A: LOGIN & INITIAL TOKEN DELIVERY ---
+```
+CLIENT                                  SERVER                              MONGODB
+  │                                        │                                   │
+  │─── POST /api/v1/users/login ──────────►│                                   │
+  │    { email/username, password }        │─── User.findOne(...) ────────────►│
+  │                                        │◄── Return user document ──────────│
+  │                                        │                                   │
+  │                                        │─── bcrypt.compare(pwd, hash)      │
+  │                                        │    (Matches!)                     │
+  │                                        │                                   │
+  │                                        │─── Generate accessToken (JWT)     │
+  │                                        │─── Generate refreshToken (JWT)    │
+  │                                        │                                   │
+  │                                        │─── user.refreshToken = refToken ─►│
+  │                                        │    user.save(...)                 │
+  │                                        │◄── Saved successfully ────────────│
+  │                                        │                                   │
+  │◄── Set-Cookie: accessToken ────────────│                                   │
+  │◄── Set-Cookie: refreshToken ───────────│                                   │
+  │◄── 200 OK { user, accessToken, ... } ──│                                   │
+```
+
+--- DIAGRAM B: ACCESSING A PROTECTED ENDPOINT ---
+```
+CLIENT                                  SERVER (verifyJWT)                  MONGODB
+  │                                        │                                   │
+  │─── GET /api/v1/users/current-user ────►│                                   │
+  │    Cookie: accessToken                 │─── jwt.verify(accessToken)        │
+  │    (or Authorization: Bearer <token>)  │    (Valid signature & not expired)│
+  │                                        │                                   │
+  │                                        │─── User.findById(decoded._id) ───►│
+  │                                        │◄── user (minus pwd/refToken) ─────│
+  │                                        │                                   │
+  │                                        │─── req.user = user; next();       │
+  │                                        │                                   │
+  │◄── 200 OK { user } ────────────────────│                                   │
+```
+
+--- DIAGRAM C: EXPIRED ACCESS TOKEN & SILENT REFRESH CYCLE ---
+```
+CLIENT                                  SERVER                              MONGODB
+  │                                        │                                   │
+  │─── GET /api/v1/users/history ─────────►│ (verifyJWT)                       │
+  │    Cookie: EXPIRED accessToken         │─── jwt.verify() fails (Expired)   │
+  │◄── 401 Unauthorized ("jwt expired") ───│                                   │
+  │                                        │                                   │
+  │ [Client Axios Interceptor catches 401] │                                   │
+  │                                        │                                   │
+  │─── POST /api/v1/users/refresh-token ──►│                                   │
+  │    Cookie: refreshToken                │─── jwt.verify(refreshToken)       │
+  │                                        │─── User.findById(decoded._id) ───►│
+  │                                        │◄── user document ─────────────────│
+  │                                        │                                   │
+  │                                        │─── Check: DB token === user token │
+  │                                        │    (Matches!)                     │
+  │                                        │                                   │
+  │                                        │─── Mint new accessToken           │
+  │                                        │─── Mint new refreshToken          │
+  │                                        │─── Save new refToken to DB ──────►│
+  │                                        │◄── Saved ─────────────────────────│
+  │                                        │                                   │
+  │◄── Set-Cookie: newAccessToken ─────────│                                   │
+  │◄── Set-Cookie: newRefreshToken ────────│                                   │
+  │◄── 200 OK { tokens } ──────────────────│                                   │
+  │                                        │                                   │
+  │ [Client retries original request]      │                                   │
+  │─── GET /api/v1/users/history ─────────►│                                   │
+  │    Cookie: newAccessToken              │                                   │
+  │◄── 200 OK [Watch history data] ────────│                                   │
+```
+
+--- DIAGRAM D: LOGOUT & SESSION REVOCATION ---
+```
+CLIENT                                  SERVER                              MONGODB
+  │                                        │                                   │
+  │─── POST /api/v1/users/logout ─────────►│ (verifyJWT attaches req.user)     │
+  │                                        │                                   │
+  │                                        │─── User.findByIdAndUpdate(        │
+  │                                        │      req.user._id,                │
+  │                                        │      { $unset: { refreshToken } } │
+  │                                        │    ) ────────────────────────────►│
+  │                                        │◄── refreshToken removed from DB ──│
+  │                                        │                                   │
+  │◄── Clear-Cookie: accessToken ──────────│                                   │
+  │◄── Clear-Cookie: refreshToken ─────────│                                   │
+  │◄── 200 OK "Logged out successfully" ───│                                   │
+```
+
+================================================================================
+12. SECURITY BEST PRACTICES & DEFENSIVE MECHANISMS IMPLEMENTED
+================================================================================
+1. HTTP-Only Cookies (XSS Defense):
+   - Access and refresh tokens are stored with `httpOnly: true`.
+   - Browser scripts cannot access `document.cookie` to steal authentication tokens.
+
+2. Double Secret Keys (Defense in Depth):
+   - `ACCESS_TOKEN_SECRET` and `REFRESH_TOKEN_SECRET` use two completely different strings.
+   - If an attacker compromises the access token secret, they STILL cannot mint
+     refresh tokens to gain permanent access.
+
+3. Database-Enforced Session Revocation:
+   - Stateless JWTs cannot normally be revoked before expiry.
+   - By storing `refreshToken` in MongoDB and comparing it upon refresh, the server
+     can instantly revoke access on logout by deleting the field (`$unset`).
+
+4. Minimal Payload in Refresh Token:
+   - Contains only `{ _id }`. Does not expose email, username, or roles.
+
+5. Sensitive Field Exclusions:
+   - Passwords and refresh tokens are systematically excluded using `.select("-password -refreshToken")`
+     on all queries returning user data to clients.
+
+6. Salt Rounds:
+   - Password hashing uses 10 salt rounds with bcrypt, striking the optimal balance
+     between high cryptographic work factor and responsive API speed.
+
+7. Production Secure Flag:
+   - In production (`process.env.NODE_ENV === "production"`), cookies are sent with
+     `secure: true`, ensuring cookies travel exclusively over encrypted HTTPS connections.
+
+================================================================================
+13. COMPLETE CODE REFERENCE
+================================================================================
+
+1. Helper Method: `generateAccessAndRefreshToken` (in src/controllers/user.controller.js)
+```javascript
+const generateAccessAndRefreshToken = async (userId) => {
+   try {
+      const user = await User.findById(userId);
+      if (!user) {
+         throw new ApiError(404, "User not found");
+      }
+
+      const accessToken = user.generateAccessToken();
+      const refreshToken = user.generateRefreshToken();
+
+      user.refreshToken = refreshToken;
+      await user.save({ validateBeforeSave: false });
+
+      return { accessToken, refreshToken };
+   } catch (error) {
+      throw new ApiError(500, "Something went wrong while generating access and refresh token");
+   }
+};
+```
+
+2. Middleware: `verifyJWT` (in src/middlewares/auth.middleware.js)
+```javascript
+export const verifyJWT = asyncHandler(async (req, _, next) => {
+    try {
+        const token =
+            req.cookies?.accessToken ||
+            req.header("Authorization")?.replace("Bearer ", "");
+
+        if (!token) {
+            throw new ApiError(401, "Unauthorized request");
+        }
+
+        const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+        const user = await User.findById(decodedToken?._id).select("-password -refreshToken");
+
+        if (!user) {
+            throw new ApiError(401, "Invalid Access Token");
+        }
+
+        req.user = user;
+        next();
+    } catch (error) {
+        throw new ApiError(401, error?.message || "Invalid Access Token");
+    }
+});
+```
+
+3. Route: Refresh Access Token (in src/controllers/user.controller.js)
+```javascript
+const refreshAccessToken = asyncHandler(async (req, res) => {
+   const refreshTokenFromUser = req.cookies.refreshToken || req.body.refreshToken;
+
+   if (!refreshTokenFromUser) {
+      throw new ApiError(401, "Unauthorized request");
+   }
+
+   try {
+      const decodedToken = jwt.verify(refreshTokenFromUser, process.env.REFRESH_TOKEN_SECRET);
+      const user = await User.findById(decodedToken?._id).select("-password -refreshToken");
+      if (!user) {
+         throw new ApiError(401, "Invalid Refresh Token");
+      }
+
+      if (user.refreshToken !== refreshTokenFromUser) {
+         throw new ApiError(401, "Invalid Refresh Token");
+      }
+
+      const { newAccessToken, newRefreshToken } = await generateAccessAndRefreshToken(user._id);
+
+      const options = {
+         httpOnly: true,
+         secure: true
+      };
+
+      return res
+         .status(200)
+         .cookie("newAccessToken", newAccessToken, options)
+         .cookie("newRefreshToken", newRefreshToken, options)
+         .json(
+            new ApiResponse(
+               200,
+               {
+                  user: user,
+                  newAccessToken,
+                  newRefreshToken
+               },
+               "User logged in successfully"
+            )
+         );
+   } catch (error) {
+      throw new ApiError(401, error?.message || "Invalid Refresh Token");
+   }
+});
+```
+
+4. Route: Logout (in src/controllers/user.controller.js)
+```javascript
+const logoutUser = asyncHandler(async (req, res) => {
+   await User.findByIdAndUpdate(
+      req.user._id,
+      {
+         $unset: { refreshToken: 1 }
+      },
+      { new: true }
+   );
+
+   const options = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production"
+   };
+
+   return res
+      .status(200)
+      .clearCookie("accessToken", options)
+      .clearCookie("refreshToken", options)
+      .json(
+         new ApiResponse(200, {}, "User logged out successfully")
+      );
+});
+```
+
+================================================================================
+END OF AUTHENTICATION REFERENCE ("authentication.txt")
+================================================================================

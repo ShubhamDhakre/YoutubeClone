@@ -42,6 +42,49 @@ const uploadOnCloudinary = async (localFilePath) => {
         }
         return null;
     }
-}
+};
 
-export  {uploadOnCloudinary}
+const extractPublicId = (url) => {
+    if (!url) return null;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return url;
+    try {
+        const parts = url.split("/");
+        const uploadIndex = parts.indexOf("upload");
+        if (uploadIndex === -1) return null;
+
+        const publicParts = parts.slice(uploadIndex + 1);
+        // If there is a version string (e.g. v1728564821), drop it
+        if (publicParts[0] && /^v\d+$/.test(publicParts[0])) {
+            publicParts.shift();
+        }
+
+        const fileName = publicParts.join("/");
+        return fileName.substring(0, fileName.lastIndexOf(".")) || fileName;
+    } catch {
+        return null;
+    }
+};
+
+const deleteFromCloudinary = async (publicUrlOrId, resourceType = "image") => {
+    try {
+        if (!publicUrlOrId) return null;
+        const publicId = extractPublicId(publicUrlOrId);
+        if (!publicId) return null;
+
+        cloudinary.config({ 
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME?.trim(), 
+            api_key: process.env.CLOUDINARY_API_KEY?.trim(),
+            api_secret: process.env.CLOUDINARY_API_SECRET?.trim()
+        });
+
+        const result = await cloudinary.uploader.destroy(publicId, {
+            resource_type: resourceType
+        });
+        return result;
+    } catch (error) {
+        console.error("Cloudinary delete error: ", error);
+        return null;
+    }
+};
+
+export { uploadOnCloudinary, deleteFromCloudinary };
